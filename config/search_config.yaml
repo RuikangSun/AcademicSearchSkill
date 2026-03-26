@@ -1,0 +1,29 @@
+# 学术搜索技能全局配置
+# 数据源启用开关（true=启用，false=禁用）
+data_sources:
+  arXiv: true
+  PubMed: true
+  bioRxiv: true
+  medRxiv: true
+  chemRxiv: true
+  Google Scholar: true
+  ResearchGate: true
+  必应学术: true
+  百度学术: true
+
+# 单平台请求间隔（秒），避免触发反爬
+rate_limits:
+  default: 2          # 通用平台默认间隔
+  PubMed: 1           # PubMed无密钥时≤3 req/s，设1更安全
+  arXiv: 2
+  bioRxiv: 2
+  medRxiv: 2
+  chemRxiv: 2
+
+# 最大检索轮次（含首轮，最多3轮）
+max_search_rounds: 3
+
+# PubMed API必填配置（无密钥要求，仅需有效邮箱用于统计）
+pubmed:
+  email: "academic.search@example.com"  # 可修改为实际邮箱
+  tool: "AcademicSearchSkill"            # 工具名称，便于NCBI识别
