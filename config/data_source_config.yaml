@@ -1,0 +1,73 @@
+# 全数据源配置
+data_sources:
+  # 预印本平台
+  arxiv:
+    enable: true
+    priority: 10
+    base_url: "http://export.arxiv.org/api/query"
+    default_max_results: 15
+    fields: ["title", "author", "abstract", "doi", "pdf_url", "published", "category"]
+    subject_mapping:
+      computer_science: ["cs.AI", "cs.LG", "cs.CV", "cs.CL"]
+      physics: ["physics.gen-ph", "physics.optics"]
+      mathematics: ["math.AP", "math.ST"]
+
+  biorxiv:
+    enable: true
+    priority: 10
+    base_url: "https://api.biorxiv.org/details/biorxiv"
+    default_max_results: 15
+    subject: "biology"
+
+  chemrxiv:
+    enable: true
+    priority: 10
+    base_url: "https://chemrxiv.org/api/search"
+    default_max_results: 15
+    subject: "chemistry"
+
+  chinaxiv:
+    enable: true
+    priority: 10
+    base_url: "https://www.chinaxiv.org/api/search"
+    default_max_results: 15
+    subject: "chinese"
+
+  # 垂直数据库
+  pubmed:
+    enable: true
+    priority: 10
+    base_url: "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
+    default_max_results: 15
+    subject: "medical"
+
+  # 通用平台
+  google_scholar:
+    enable: true
+    priority: 8
+    indirect_search: true
+    site_syntax: "site:scholar.google.com"
+    default_max_results: 10
+
+  researchgate:
+    enable: true
+    priority: 7
+    indirect_search: true
+    site_syntax: "site:researchgate.net"
+    default_max_results: 10
+
+# 领域-数据源自动映射规则
+subject_mapping:
+  computer_science: ["arxiv", "ieeexplore", "acm", "google_scholar"]
+  biology: ["biorxiv", "pubmed", "google_scholar"]
+  chemistry: ["chemrxiv", "pubmed", "google_scholar"]
+  medical: ["pubmed", "medrxiv", "google_scholar"]
+  chinese_academic: ["chinaxiv", "baidu_scholar", "cnki"]
+  general: ["google_scholar", "bing_academic", "researchgate"]
+
+# 多轮迭代配置
+iteration:
+  max_rounds: 3
+  min_literature_count: 10
+  max_literature_count: 50
+  cluster_threshold: 0.7
