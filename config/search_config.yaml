@@ -1,29 +1,57 @@
-# 学术搜索技能全局配置
-# 数据源启用开关（true=启用，false=禁用）
-data_sources:
-  arXiv: true
-  PubMed: true
-  bioRxiv: true
-  medRxiv: true
-  chemRxiv: true
-  Google Scholar: true
-  ResearchGate: true
-  必应学术: true
-  百度学术: true
+# Academic Full Search Skill Configuration
+# 完整配置模板
+# 使用时请修改 email 字段为你的真实邮箱（PubMed 必需）
 
-# 单平台请求间隔（秒），避免触发反爬
-rate_limits:
-  default: 2          # 通用平台默认间隔
-  PubMed: 1           # PubMed无密钥时≤3 req/s，设1更安全
-  arXiv: 2
-  bioRxiv: 2
-  medRxiv: 2
-  chemRxiv: 2
+search:
+  # 启用的数据源
+  enabled_sources:
+    - arxiv
+    - pubmed
+    - biorxiv
+    - medrxiv
+    - chemrxiv
+    - semantic_scholar
+    - google_scholar
+    # - researchgate  # 可选，可能触发反爬
 
-# 最大检索轮次（含首轮，最多3轮）
-max_search_rounds: 3
+  # 检索参数
+  request_interval: 5        # 请求间隔（秒）
+  max_results: 20            # 单数据源最大结果数
+  max_rounds: 3              # 最大检索轮次
+  time_range_days: 3650      # 默认检索时间范围（天，3650=10 年）
 
-# PubMed API必填配置（无密钥要求，仅需有效邮箱用于统计）
-pubmed:
-  email: "academic.search@example.com"  # 可修改为实际邮箱
-  tool: "AcademicSearchSkill"            # 工具名称，便于NCBI识别
+  # 输出参数
+  output_format: "GB/T 7714-2015"  # 引用格式：GB/T 7714-2015, APA, MLA
+  output_count: 20                 # 最终输出文献数量
+
+  # PubMed 必需
+  email: "your-email@example.com"  # ⚠️ 请替换为你的真实邮箱
+  tool_name: "AcademicSearchSkill"
+
+  # 高级选项
+  sort_by: "relevance"           # 排序：relevance, date, citations
+  include_preprints: true        # 是否包含预印本
+  auto_deduplicate: true         # 自动去重
+
+  # 数据源特定配置
+  sources:
+    arxiv:
+      categories: []  # 限定学科分类，如 ['cs.CV', 'cs.LG']
+      sort_by: "submittedDate"
+    
+    pubmed:
+      date_range_type: "DP"  # DP=发表日期，MDAT=修改日期
+    
+    semantic_scholar:
+      min_citations: 0       # 最小引用数过滤
+      open_access_only: false  # 仅开放获取
+    
+    google_scholar:
+      use_proxy: false       # 是否使用代理
+      proxy_url: ""          # 代理地址
+
+  # 日志配置
+  logging:
+    level: "INFO"            # DEBUG, INFO, WARNING, ERROR
+    save_to_file: true
+    log_file: "logs/search.log"
