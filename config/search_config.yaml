@@ -1,57 +1,75 @@
-# Academic Full Search Skill Configuration
-# 完整配置模板
-# 使用时请修改 email 字段为你的真实邮箱（PubMed 必需）
-
 search:
-  # 启用的数据源
+  # 启用的数据源（按优先级排序）
   enabled_sources:
-    - arxiv
-    - pubmed
-    - biorxiv
-    - medrxiv
-    - chemrxiv
-    - semantic_scholar
-    - google_scholar
-    # - researchgate  # 可选，可能触发反爬
+    - crossref        # 高优先级 - 元数据全面、DOI 解析
+    - arxiv           # 预印本 - 物理/计算机/数学
+    - pubmed          # 生物医学权威
+    - semantic_scholar # AI 驱动 - 引用指标
+    - biorxiv         # 生物学预印本
+    - medrxiv         # 医学预印本
+    - chemrxiv        # 化学预印本
+    # - google_scholar  # 按需启用 - Playwright 兜底
+  
+  # 请求控制
+  request_interval: 2         # 秒 - 请求间隔
+  max_results: 20             # 单平台最大结果数
+  max_rounds: 3               # 最大检索轮次
+  
+  # 输出格式
+  output_format: "GB/T 7714-2015"  # 可选：GB/T 7714-2015, APA, MLA
+  
+  # 必需配置
+  email: "your.email@example.com"      # PubMed 必需
+  mailto: "your.email@example.com"     # Crossref 推荐（提升限流阈值）
+  
+  # Crossref 特定配置
+  crossref:
+    base_url: "https://api.crossref.org/works"
+    default_filters:
+      - "type:journal-article"
+    sort: "relevance"
+    order: "desc"
+  
+  # arXiv 特定配置
+  arxiv:
+    base_url: "http://export.arxiv.org/api/query"
+    default_categories: []  # 空表示全部分类
+  
+  # PubMed 特定配置
+  pubmed:
+    esearch_url: "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+    efetch_url: "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
+    tool_name: "AcademicSearchSkill"
+  
+  # Semantic Scholar 特定配置
+  semantic_scholar:
+    base_url: "https://api.semanticscholar.org/graph/v1/paper/search"
+    default_fields:
+      - title
+      - authors
+      - year
+      - abstract
+      - doi
+      - citationCount
+      - openAccessPdf
+  
+  # rxiv 系列配置
+  rxiv:
+    base_url: "https://api.medrxiv.org/details"
+    date_range_days: 365  # 检索最近 N 天
+  
+  # Google Scholar 配置（Playwright）
+  google_scholar:
+    base_url: "https://scholar.google.com/scholar"
+    delay_between_requests: 1.5  # 秒
 
-  # 检索参数
-  request_interval: 5        # 请求间隔（秒）
-  max_results: 20            # 单数据源最大结果数
-  max_rounds: 3              # 最大检索轮次
-  time_range_days: 3650      # 默认检索时间范围（天，3650=10 年）
+# 日志配置
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
-  # 输出参数
-  output_format: "GB/T 7714-2015"  # 引用格式：GB/T 7714-2015, APA, MLA
-  output_count: 20                 # 最终输出文献数量
-
-  # PubMed 必需
-  email: "your-email@example.com"  # ⚠️ 请替换为你的真实邮箱
-  tool_name: "AcademicSearchSkill"
-
-  # 高级选项
-  sort_by: "relevance"           # 排序：relevance, date, citations
-  include_preprints: true        # 是否包含预印本
-  auto_deduplicate: true         # 自动去重
-
-  # 数据源特定配置
-  sources:
-    arxiv:
-      categories: []  # 限定学科分类，如 ['cs.CV', 'cs.LG']
-      sort_by: "submittedDate"
-    
-    pubmed:
-      date_range_type: "DP"  # DP=发表日期，MDAT=修改日期
-    
-    semantic_scholar:
-      min_citations: 0       # 最小引用数过滤
-      open_access_only: false  # 仅开放获取
-    
-    google_scholar:
-      use_proxy: false       # 是否使用代理
-      proxy_url: ""          # 代理地址
-
-  # 日志配置
-  logging:
-    level: "INFO"            # DEBUG, INFO, WARNING, ERROR
-    save_to_file: true
-    log_file: "logs/search.log"
+# 缓存配置（可选）
+cache:
+  enabled: true
+  ttl_hours: 24
+  cache_dir: ".cache/academic_search"
