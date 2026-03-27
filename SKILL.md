@@ -3,8 +3,8 @@
 | 属性 | 值 |
 |------|------|
 | name | academic-full-search |
-| description | 全量覆盖主流平台的学术搜索技能，支持 Crossref、arXiv、PubMed、Semantic Scholar 等。**触发规则**：用户提及"学术调研、文献查找、主题综述、参考文献、引文溯源、预印本检索、DOI 解析、GB/T 7714/APA/MLA 引用格式生成"时自动触发。**覆盖数据源**：Crossref（高优先级）、arXiv、PubMed、Semantic Scholar、bioRxiv、medRxiv、chemRxiv、Google Scholar。**禁用边界**：非学术类内容禁止调用。 |
-| version | 1.3.0 |
+| description | 全量覆盖主流平台的学术搜索技能，支持 Crossref、arXiv、PubMed、Semantic Scholar 等。**触发规则**：用户提及"学术调研、文献查找、主题综述、参考文献、引文溯源、预印本检索、DOI 解析、GB/T 7714/APA/MLA 引用格式生成"时自动触发。**覆盖数据源**：Crossref（高优先级）、arXiv、PubMed、Semantic Scholar、bioRxiv、medRxiv、chemRxiv（需独立配置 API）、Google Scholar。**禁用边界**：非学术类内容禁止调用。**引用说明**：当前提供基础引用串生成，严格标准引用需使用专业工具核对。 |
+| version | 1.4.0 |
 | last_update | 2026-03-27 |
 | required_env | Python 3.9+、Playwright+Chromium、requests、xmltodict、lxml、pyyaml |
 
@@ -38,7 +38,7 @@ search:
     - semantic_scholar # AI 驱动学术搜索
     - biorxiv
     - medrxiv
-    - chemrxiv
+    # - chemrxiv    # 需确认 API 端点后启用
   
   request_interval: 2      # 秒
   max_results: 20
@@ -60,7 +60,7 @@ search:
 - 【可选】文献类型（默认：全类型）
 - 【可选】排除数据源（默认：无排除）
 - 【可选】输出文献数量（默认：20 篇，上限 50 篇）
-- 【可选】参考文献格式（默认：GB/T 7714-2015）
+- 【可选】参考文献格式（默认：GB/T 7714-2015，*注：为基础格式*）
 - 【可选】是否限制检索轮次（默认：最多 3 轮）
 
 ---
@@ -71,11 +71,12 @@ search:
 
 **对所有启用的数据源执行全量并行检索**，按优先级排序：
 1. **Crossref**（高优先级 - 元数据全面、速度快）
-2. **arXiv**（预印本首选）
+2. **arXiv**（预印本首选，*注意：arXiv ID ≠ DOI*）
 3. **PubMed**（生物医学权威）
-4. **Semantic Scholar**（AI 驱动、引用指标）
-5. **bioRxiv/medRxiv/chemRxiv**（预印本补充）
-6. **Google Scholar**（兜底检索）
+4. **Semantic Scholar**（AI 驱动、引用指标，*必须请求 paperId*）
+5. **bioRxiv/medRxiv**（预印本补充）
+6. **chemRxiv**（需独立 API 端点，*已分离逻辑*）
+7. **Google Scholar**（兜底检索）
 
 #### 2.2 Crossref API 实现（新增 - 高优先级）
 
@@ -140,7 +141,7 @@ def search_crossref(keyword=None, max_results=20, filters=None, sort="relevance"
     
     # 添加 User-Agent
     headers = {
-        'User-Agent': f'AcademicSearchSkill/1.3.0 (mailto:{mailto})' if mailto else 'AcademicSearchSkill/1.3.0'
+        'User-Agent': f'AcademicSearchSkill/1.3.1 (mailto:{mailto})' if mailto else 'AcademicSearchSkill/1.3.1'
     }
     
     try:
@@ -214,7 +215,7 @@ if __name__ == "__main__":
         print(f"日期：{p['published']}")
 ```
 
-#### 2.3 arXiv 公共 API 实现
+#### 2.3 arXiv 公共 API 实现（**修复 DOI 逻辑**）
 
 ```python
 import requests
@@ -232,7 +233,7 @@ def search_arxiv(keyword, max_results=20, days_back=3650):
         days_back: 回溯天数（默认 10 年）
     
     Returns:
-        list: 文献列表
+        list: 文献列表，新增 arxiv_id 字段，doi 字段仅在真实 DOI 存在时填充
     """
     end_date = datetime.utcnow()
     start_date = end_date - timedelta(days=days_back)
@@ -265,7 +266,8 @@ def search_arxiv(keyword, max_results=20, days_back=3650):
                 'title': '',
                 'authors': [],
                 'summary': '',
-                'doi': '',
+                'doi': '',  # 仅存储真实 DOI
+                'arxiv_id': '',  # 新增：单独存储 arXiv ID
                 'link': '',
                 'published': '',
                 'source': 'arxiv'
@@ -288,18 +290,25 @@ def search_arxiv(keyword, max_results=20, days_back=3650):
             if published_elem is not None:
                 paper['published'] = published_elem.text[:10]
             
+            # 提取 PDF 链接和 arXiv ID
+            arxiv_id_text = ''
             for link in entry.findall('atom:link', ns):
                 if link.get('title') == 'pdf':
                     paper['link'] = link.get('href')
-                    break
+                if link.get('rel') == 'alternate':
+                    # 例如：https://arxiv.org/abs/1701.00001
+                    alt_link = link.get('href')
+                    if 'arxiv.org/abs/' in alt_link:
+                        arxiv_id_text = alt_link.split('arxiv.org/abs/')[-1]
+                        paper['arxiv_id'] = arxiv_id_text
+                        if not paper['link']:
+                            paper['link'] = alt_link
             
-            if not paper['link']:
-                arxiv_id = entry.find('atom:id', ns)
-                if arxiv_id is not None:
-                    arxiv_id_text = arxiv_id.text
-                    if 'arxiv.org/abs/' in arxiv_id_text:
-                        paper['doi'] = arxiv_id_text.split('arxiv.org/abs/')[-1]
-                        paper['link'] = f"https://arxiv.org/abs/{paper['doi']}"
+            # 尝试从 entry 中提取真实 DOI（如果有）
+            for link in entry.findall('atom:link', ns):
+                if link.get('title') == 'doi' or 'doi.org' in (link.get('href') or ''):
+                    paper['doi'] = link.get('href').split('doi.org/')[-1]
+                    break
             
             results.append(paper)
         
@@ -440,7 +449,7 @@ def search_pubmed(keyword, max_results=20, email="academic.search@example.com", 
         return []
 ```
 
-#### 2.5 Semantic Scholar API 实现
+#### 2.5 Semantic Scholar API 实现（**修复 paperId 字段**）
 
 ```python
 import requests
@@ -455,11 +464,12 @@ def search_semantic_scholar(keyword, max_results=20):
         max_results: 最大结果数
     
     Returns:
-        list: 文献列表
+        list: 文献列表，确保请求 paperId 字段
     """
     url = "https://api.semanticscholar.org/graph/v1/paper/search"
     
-    fields = ['title', 'authors', 'year', 'abstract', 'doi', 'citationCount', 'influentialCitationCount', 'openAccessPdf']
+    # 必须包含 paperId！
+    fields = ['paperId', 'title', 'authors', 'year', 'abstract', 'doi', 'citationCount', 'influentialCitationCount', 'openAccessPdf']
     
     params = {
         'query': keyword,
@@ -498,6 +508,7 @@ def search_semantic_scholar(keyword, max_results=20):
             elif paper.get('doi'):
                 result['link'] = f"https://doi.org/{paper['doi']}"
             else:
+                # 现在 paperId 一定存在（因为请求了该字段）
                 paper_id = paper.get('paperId', '')
                 if paper_id:
                     result['link'] = f"https://www.semanticscholar.org/paper/{paper_id}"
@@ -511,7 +522,7 @@ def search_semantic_scholar(keyword, max_results=20):
         return []
 ```
 
-#### 2.6 bioRxiv/medRxiv/chemRxiv API 实现
+#### 2.6 bioRxiv/medRxiv/chemRxiv API 实现（**分离 chemRxiv 逻辑**）
 
 ```python
 import requests
@@ -533,7 +544,19 @@ def search_rxiv(server, keyword, max_results=20):
     end_date = datetime.now()
     start_date = end_date - timedelta(days=365)
     
-    url = f"https://api.medrxiv.org/details/{server}/{start_date.strftime('%Y-%m-%d')}/{end_date.strftime('%Y-%m-%d')}/0/json"
+    # 分离 API 端点逻辑
+    if server in ['biorxiv', 'medrxiv']:
+        # bioRxiv/medRxiv 使用统一端点
+        url = f"https://api.medrxiv.org/details/{server}/{start_date.strftime('%Y-%m-%d')}/{end_date.strftime('%Y-%m-%d')}/0/json"
+    elif server == 'chemrxiv':
+        # chemRxiv 需使用独立端点（此处为示例，需根据官方文档确认）
+        # 例如：https://api.chemrxiv.org/v1/...
+        # 若不确定，可暂时返回空列表并提示
+        print("chemRxiv API 端点需确认，暂不执行检索")
+        return []
+    else:
+        print(f"未知的 rxiv 服务器：{server}")
+        return []
     
     try:
         time.sleep(2)
@@ -662,16 +685,21 @@ async def scrape_google_scholar(keyword, max_results=20):
 def process_results(all_results):
     """
     标准化处理检索结果：去重、筛选、排序
+    支持 arxiv_id 作为辅助去重字段
     """
-    seen_dois = set()
-    seen_titles = set()
+    seen_identifiers = set()
     processed = []
     
     for paper in all_results:
         identifier = None
         
+        # 优先使用 DOI 去重
         if paper.get('doi'):
             identifier = paper['doi'].lower()
+        # 其次使用 arXiv ID
+        elif paper.get('arxiv_id'):
+            identifier = f"arxiv:{paper['arxiv_id']}"
+        # 最后使用标题+年份+第一作者
         else:
             title = paper.get('title', '').lower().strip()
             year = paper.get('published', '')[:4]
@@ -679,18 +707,16 @@ def process_results(all_results):
             first_author = authors[0].split()[-1] if authors else 'Unknown'
             identifier = f"{title}_{year}_{first_author}"
         
-        if identifier in seen_dois or identifier in seen_titles:
+        if identifier in seen_identifiers:
             continue
         
         if not paper.get('title') or paper['title'] in ['', '[Title not available]']:
             continue
         
-        if not paper.get('link') and not paper.get('doi'):
+        if not paper.get('link') and not paper.get('doi') and not paper.get('arxiv_id'):
             continue
         
-        seen_dois.add(identifier)
-        if paper.get('title'):
-            seen_titles.add(paper['title'].lower().strip())
+        seen_identifiers.add(identifier)
         
         processed.append(paper)
     
@@ -710,33 +736,73 @@ def process_results(all_results):
 
 ---
 
-### Step 5：标准输出与交付
+### Step 5：基础引用串生成（**修正描述与逻辑**）
 
 ```python
 def generate_citation(paper, style="GB/T 7714-2015"):
     """
-    生成标准引用格式
+    生成基础引用字符串（非严格标准，需人工核对）
+    
+    Args:
+        paper: 文献元数据
+        style: 格式类型 ("GB/T 7714-2015", "APA", "MLA")
+    
+    Returns:
+        str: 基础引用串
     """
     authors = paper.get('authors', [])
     title = paper.get('title', '')
-    year = paper.get('published', '')[:4] if paper.get('published') else ''
+    year = paper.get('published', '')[:4] if paper.get('published') else 'n.d.'
     doi = paper.get('doi', '')
+    link = paper.get('link', '')
+    source = paper.get('source', '')
     
+    # 处理作者字符串
     if isinstance(authors, list):
         if len(authors) <= 3:
             author_str = ', '.join(authors)
         else:
             author_str = f"{authors[0]} 等"
     else:
-        author_str = authors
+        author_str = authors  # 若为字符串直接使用
+    
+    # 根据文献类型选择标识（简化版）
+    doc_type = "[EB/OL]"  # 默认电子文献
+    if source == 'crossref' and paper.get('type') == 'journal-article':
+        doc_type = "[J/OL]"
+    elif source == 'arxiv':
+        doc_type = "[EB/OL]"  # arXiv 预印本
     
     if style == "GB/T 7714-2015":
-        return f"[{author_str}]. {title}[J/OL]. {year}. DOI: {doi}"
+        # 基础版：[序号] 作者. 标题[文献类型标识]. 年份. 链接/DOI.
+        # 注：严格标准需更多元数据（期刊名、卷期等），此处仅生成基础串
+        citation = f"[{author_str}]. {title}{doc_type}. {year}."
+        if doi:
+            citation += f" https://doi.org/{doi}."
+        elif link:
+            citation += f" {link}."
+        return citation
+    
     elif style == "APA":
-        return f"{author_str} ({year}). {title}. https://doi.org/{doi}"
+        # 基础版：作者. (年份). 标题. 链接/DOI.
+        citation = f"{author_str} ({year}). {title}."
+        if doi:
+            citation += f" https://doi.org/{doi}"
+        elif link:
+            citation += f" {link}"
+        return citation
+    
     elif style == "MLA":
-        return f'{author_str}. "{title}." ({year}).'
+        # 基础版：作者. "标题." 年份. 链接/DOI.
+        citation = f'{author_str}. "{title}." {year}.'
+        if doi:
+            citation += f" https://doi.org/{doi}"
+        elif link:
+            citation += f" {link}"
+        return citation
+    
     else:
+        # 默认格式
         return f"{author_str}. {title}. {year}."
 ```
 
@@ -748,7 +814,10 @@ def generate_citation(paper, style="GB/T 7714-2015"):
 2. 必须优先使用**无密钥公开 API**（Crossref > arXiv > PubMed > Semantic Scholar）
 3. 必须严格遵守各平台的限流规则
 4. 所有输出内容必须 100% 基于实际检索结果，禁止虚构文献信息
-5. Crossref 作为高优先级数据源，应优先调用以获取全面元数据
+5. **arXiv ID 不得作为 DOI**，必须单独存储为 `arxiv_id` 字段
+6. **Semantic Scholar 必须请求 `paperId` 字段**
+7. **chemRxiv 必须使用独立 API 端点**，不得与 bioRxiv/medRxiv 混用
+8. 引用生成必须明确说明为“基础引用串”，如需严格标准需推荐专业工具
 
 ---
 
@@ -761,3 +830,4 @@ def generate_citation(paper, style="GB/T 7714-2015"):
 | 经典文献查找 | Crossref + PubMed + Semantic Scholar | 按引用排序 |
 | 交叉学科研究 | 全平台并行 | 多组关键词组合 |
 | 中文学术 | Crossref + Semantic Scholar | 中英双语关键词 |
+| 严格引用生成 | 检索后导出至 Zotero/EndNote | 提示用户使用专业工具 |

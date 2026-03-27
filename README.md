@@ -1,8 +1,8 @@
 # Academic Full Search Skill
 
-全量覆盖主流平台的学术搜索技能，支持多源并行检索、智能去重、标准引用格式生成。
+全量覆盖主流平台的学术搜索技能，支持多源并行检索、智能去重、基础引用串生成。
 
-![Version](https://img.shields.io/badge/version-1.3.0-blue)
+![Version](https://img.shields.io/badge/version-1.4.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Python](https://img.shields.io/badge/python-3.9+-blue)
 
@@ -10,10 +10,10 @@
 
 ## 📌 特性
 
-- **全平台覆盖**：支持 arXiv、PubMed、Crossref、Semantic Scholar、bioRxiv/medRxiv/chemRxiv、Google Scholar 等主流学术平台
+- **全平台覆盖**：支持 arXiv、PubMed、Crossref、Semantic Scholar、bioRxiv/medRxiv、Google Scholar 等主流学术平台
 - **并行检索**：多数据源同时检索，最大化覆盖相关文献
 - **智能去重**：基于 DOI、标题、作者等多维度去重
-- **标准引用**：支持 GB/T 7714-2015、APA、MLA 等多种引用格式
+- **基础引用串生成**：提供 GB/T 7714-2015、APA、MLA 等格式的基础引用字符串（*非严格标准，建议使用专业工具进一步核对*）
 - **多轮补全**：自动提取关键词进行多轮深度检索
 - **无密钥优先**：优先使用公开 API，无需注册即可使用
 
@@ -67,8 +67,10 @@ for paper in results:
 | **Semantic Scholar** | 元数据 | 公开 API | 全学科 | ⭐⭐⭐⭐ |
 | **bioRxiv** | 预印本 | 公开 API | 生物学 | ⭐⭐⭐⭐ |
 | **medRxiv** | 预印本 | 公开 API | 医学 | ⭐⭐⭐⭐ |
-| **chemRxiv** | 预印本 | 公开 API | 化学 | ⭐⭐⭐⭐ |
+| **chemRxiv** | 预印本 | 公开 API* | 化学 | ⭐⭐⭐⭐ |
 | **Google Scholar** | 搜索引擎 | Playwright 爬取 | 全学科 | ⭐⭐⭐ |
+
+*注：chemRxiv API 端点需独立配置，详见下方说明。
 
 ### 数据源说明
 
@@ -82,6 +84,7 @@ for paper in results:
 - **优势**：最新预印本，涵盖物理、计算机、数学等领域
 - **API**：`http://export.arxiv.org/api/query`
 - **特点**：支持学科分类过滤、按时间排序
+- **注意**：arXiv ID 不等于 DOI，将单独存储为 `arxiv_id` 字段
 
 #### PubMed
 - **优势**：生物医学领域最权威摘要库
@@ -92,6 +95,11 @@ for paper in results:
 - **优势**：AI 驱动，提供引用数、影响力等指标
 - **API**：`https://api.semanticscholar.org/graph/v1/paper/search`
 - **特点**：开放获取标识、引用关系清晰
+- **注意**：必须请求 `paperId` 字段以确保 fallback 逻辑生效
+
+#### bioRxiv/medRxiv/chemRxiv
+- **bioRxiv/medRxiv**：使用 `api.medrxiv.org` 端点
+- **chemRxiv**：需使用独立 API（如 `api.chemrxiv.org`，需根据官方文档确认端点），当前版本已分离逻辑避免兼容问题
 
 ---
 
@@ -110,7 +118,7 @@ search:
     - semantic_scholar
     - biorxiv
     - medrxiv
-    - chemrxiv
+    # - chemrxiv    # 需确认 API 端点后启用
   
   request_interval: 2       # 请求间隔（秒）
   max_results: 20           # 单平台最大结果数
@@ -188,17 +196,19 @@ unique_results = searcher.process_results(all_results)
 
 ## 📄 输出格式
 
-### 标准引用格式
+### 基础引用串示例
+
+**注**：以下为基础格式示例，如需严格标准引用（如 GB/T 7714-2015 完整著录），建议使用 Zotero、EndNote 等专业工具进一步核对。
 
 ```python
-# GB/T 7714-2015
-"[1] Goodfellow I, Bengio Y, Courville A. Deep Learning[M]. MIT Press, 2016."
+# GB/T 7714-2015（基础版）
+"[1] Goodfellow I, Bengio Y, Courville A. Deep Learning[EB/OL]. 2016. https://doi.org/10.1038/nature12373."
 
-# APA
-"Goodfellow, I., Bengio, Y., & Courville, A. (2016). Deep Learning. MIT Press."
+# APA（基础版）
+"Goodfellow, I., Bengio, Y., & Courville, A. (2016). Deep Learning. https://doi.org/10.1038/nature12373"
 
-# MLA
-"Goodfellow, Ian, et al. Deep Learning. MIT Press, 2016."
+# MLA（基础版）
+"Goodfellow, Ian, et al. Deep Learning. 2016. https://doi.org/10.1038/nature12373."
 ```
 
 ### JSON 格式
@@ -209,6 +219,7 @@ unique_results = searcher.process_results(all_results)
   "authors": ["Goodfellow, Ian", "Bengio, Yoshua", "Courville, Aaron"],
   "year": "2016",
   "doi": "10.1038/nature12373",
+  "arxiv_id": "1701.00001",  // 新增：arXiv 专用字段
   "link": "https://doi.org/10.1038/nature12373",
   "citations": 15000,
   "source": "crossref"
@@ -235,26 +246,19 @@ unique_results = searcher.process_results(all_results)
 2. **频率控制**：遵守各平台限流规则（Crossref 建议≤3 req/s）
 3. **数据缓存**：建议缓存已查询结果，避免重复请求
 4. **反爬机制**：Google Scholar 可能触发验证，建议优先使用 API 数据源
+5. **引用格式**：当前 `generate_citation` 为基础实现，严格学术出版建议使用专业文献管理工具
 
 ---
 
 ## 📝 更新日志
 
-### v1.3.0 (2026-03-27)
-- ✨ **新增 Crossref 数据源**（高优先级）
-  - 支持 DOI 解析、元数据查询、引用关系
-  - 添加复杂过滤条件支持
-  - 优化查询速度和数据结构
-- 🔄 调整数据源优先级排序
-- 📝 完善配置示例
-
-### v1.2.0 (2026-03-27)
-- ✨ 新增 Semantic Scholar 数据源
-- 🗑️ 移除 chinaxiv 数据源
-- 📝 添加完整 Python 代码示例
-
-### v1.1.0 (2026-03-26)
-- 初始版本发布
+### v1.4.0 (2026-03-27)
+- **修复 P0 级缺陷**：
+  - 修正 arXiv ID 被错误填充为 DOI 的问题，新增 `arxiv_id` 字段单独存储
+  - 修复 Semantic Scholar 未请求 `paperId` 字段导致 fallback 逻辑失效的问题
+  - 分离 bioRxiv/medRxiv 与 chemRxiv 的 API 调用逻辑，避免 chemRxiv 兼容问题
+  - 降级“标准引用”描述为“基础引用串生成”，并补充使用专业工具的建议
+- 完善数据源说明与注意事项
 
 ---
 
